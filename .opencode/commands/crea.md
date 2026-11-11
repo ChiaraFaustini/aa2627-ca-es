@@ -10,7 +10,7 @@ Se `$1` è il **progetto**, in qualunque forma («progetto», «project», «il 
 
 1. Leggere le specifiche su `https://codestesie.it/aa2627/ca/attivita/<cartella>/`. Se l'indirizzo non risponde, avvisare e fermarsi: l'attività non è ancora stata pubblicata. Se in cima alla pagina c'è l'avviso «Specifiche da definire», dirlo e chiedere se aspettare la versione definitiva: la cartella si crea solo se lo studente conferma.
 2. Creare la cartella con tre file.
-   - `index.html`: pagina in italiano con `<meta charset="utf-8">`, il titolo dell'attività, lo script di p5.js `https://cdn.jsdelivr.net/npm/p5@2.3.3/lib/p5.min.js`, il proprio `style.css` e `sketch.js`.
+   - `index.html`: pagina in italiano con `<meta charset="utf-8">`, il titolo dell'attività, lo script di p5.js `https://cdn.jsdelivr.net/npm/p5@2.3.3/lib/p5.min.js`, seguito da quelli delle eventuali librerie richieste dalle specifiche, con l'indirizzo e la versione indicati, poi il proprio `style.css` e `sketch.js`.
    - `style.css`: esattamente questo, che tiene la tela al centro della finestra, con gli eventuali controlli creati dallo sketch subito sotto:
 
      ```css
@@ -33,7 +33,7 @@ Se `$1` è il **progetto**, in qualunque forma («progetto», «project», «il 
        display: block;
      }
      ```
-   - `sketch.js`: in cima, come commenti, l'obiettivo dell'attività e l'elenco dei vincoli ricavati dalle specifiche.
+   - `sketch.js`: in cima, come commenti, l'obiettivo dell'attività e l'elenco dei vincoli ricavati dalle specifiche, con gli indirizzi che contengono (librerie, guide) scritti per intero.
 3. Scrivere in `sketch.js` un **contenitore vuoto**: `setup()` con la tela delle dimensioni richieste dalle specifiche, e `draw()` vuota. Niente disegno e niente soluzione: lo sketch si riempie a poco a poco con quello che decide lo studente.
 4. Aggiungere la voce all'elenco nell'`index.html` della radice, nella forma `<li><a href="es1/">Es1. Titolo</a></li>`, con la cartella giusta e il titolo dell'attività preso dalle specifiche, e togliere la riga «Ancora nessun lavoro pubblicato» se è ancora lì. L'anteprima non va scritta: la pagina la aggiunge da sola leggendo `preview.png` nella cartella, e finché l'immagine manca mostra al suo posto un riquadro che lo dice.
 5. Chiudere con due cose sole. Come vedere lo sketch: il pulsante **Go Live** nella barra in basso a destra di Visual Studio Code, aggiunto dall'estensione Live Server, apre nel browser l'elenco dei lavori, da cui si entra nella cartella. Poi **una domanda sola**: da che cosa vuole partire. Incoraggiare a rispondere con un procedimento (quali forme, quale regola, che cosa si ripete o cambia) più che con la descrizione del risultato finale.

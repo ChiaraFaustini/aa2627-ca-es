@@ -1,0 +1,17 @@
+{
+  "chat.useAgentsMdFile": true,
+  "chat.tools.terminal.autoApprove": {
+    "mkdir": true,
+    "/^git (status|diff|log|show|ls-files|rev-parse|add|mv|commit|fetch)\\b/": true,
+    "/^git diff --no-index\\b/": false,
+    "/^git branch( --show-current)?$/": true,
+    "/^git remote( -v| get-url .+)?$/": true,
+    "/^git config (user\\.name|user\\.email|--get .+)$/": true,
+    "/^git pull$/": true,
+    "/^git push( origin main| -u origin main)?$/": true
+  },
+  "chat.tools.urls.autoApprove": {
+    "https://codestesie.it/*": true,
+    "https://raw.githubusercontent.com/belluscio-abafr/*": true
+  }
+}
