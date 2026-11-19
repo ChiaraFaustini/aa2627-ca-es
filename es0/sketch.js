@@ -1,119 +1,132 @@
 /*
- * Schotter ("Gravel") — Georg Nees, 1968
- * Animated reconstruction using p5.js — Mode 2: Moving Disorder Front
+ * Schotter ("Ghiaia") — Georg Nees, 1968
+ * Ricostruzione animata con p5.js — Modalità 2: fronte di disordine in movimento
  *
- * In Nees' original work, disorder is a function of vertical position:
- * the top rows are ordered, and perturbation increases toward the bottom.
- * This animation transforms that spatial progression into a temporal one:
- * a disorder front travels vertically through the composition, so each
- * row transitions from ordered to disordered at a different moment in time.
+ * Nell'opera originale di Nees il disordine dipende dalla posizione verticale:
+ * le righe in alto sono ordinate e la perturbazione cresce verso il basso.
+ * Questa animazione trasforma quella progressione spaziale in una progressione
+ * temporale: un fronte di disordine attraversa la composizione, così ogni
+ * riga passa dall'ordine al disordine in un momento diverso.
  */
 
-// ---------- Numerical parameters ----------
+// ---------- Parametri numerici ----------
 
-const COLS = 12;              // number of columns in the grid
-const ROWS = 22;              // number of rows in the grid
-const SQUARE_SIZE = 26;       // side length of each square (pixels)
-const SPACING_X = 30;         // horizontal distance between grid positions
-const SPACING_Y = 30;         // vertical distance between grid positions
-const MAX_DISPLACEMENT_X = 12; // max horizontal offset at the bottom row (pixels)
-const MAX_DISPLACEMENT_Y = 8;  // max vertical offset at the bottom row (pixels)
-// Note: p5.js constants like PI are only available inside setup()/draw(),
-// so we use Math.PI here at the top level.
-const MAX_ROTATION = Math.PI / 2; // max rotation angle at the bottom row (radians)
-const SEED = 42;              // random seed — same seed = same composition
+const COLS = 12;              // numero di colonne della griglia
+const ROWS = 22;              // numero di righe della griglia
+const SQUARE_SIZE = 26;       // lato di ogni quadrato (pixel)
+const SPACING_X = 30;         // distanza orizzontale tra le posizioni della griglia
+const SPACING_Y = 30;         // distanza verticale tra le posizioni della griglia
+const MAX_DISPLACEMENT_X = 12; // spostamento orizzontale massimo all'ultima riga (pixel)
+const MAX_DISPLACEMENT_Y = 8;  // spostamento verticale massimo all'ultima riga (pixel)
+// Nota: le costanti di p5.js come PI sono disponibili solo dentro setup()/draw(),
+// quindi qui, fuori dalle funzioni, usiamo Math.PI.
+const MAX_ROTATION = Math.PI / 2; // angolo di rotazione massimo all'ultima riga (radianti)
+const SEED = 42;              // seme casuale — lo stesso seme dà sempre la stessa composizione
 
-// Exponents controlling the non-linear progression of disorder.
-// Lower exponent = faster early rise; higher exponent = slower early rise.
-// Displacement uses a gentle curve so the first rows stay almost ordered.
-// Rotation uses a stronger curve so it grows faster than displacement.
-const DISPLACEMENT_CURVE = 0.8; // gentle: subtle early, moderate at the bottom
-const ROTATION_CURVE = 0.9;     // stronger: grows faster, dominates the lower half
+// Esponenti che controllano la progressione non lineare del disordine.
+// Esponente più basso = crescita più rapida all'inizio; più alto = crescita più lenta.
+// Lo spostamento usa una curva delicata, così le prime righe restano quasi ordinate.
+// La rotazione usa una curva più marcata, così cresce più velocemente dello spostamento.
+const DISPLACEMENT_CURVE = 0.8; // delicata: appena percettibile all'inizio, moderata in fondo
+const ROTATION_CURVE = 0.9;     // marcata: cresce più in fretta, domina la metà inferiore
 
-// ---------- Animation parameters ----------
+// ---------- Parametri dell'animazione ----------
 
-const CYCLE_DURATION = 22;    // seconds for a full cycle (forward + hold + reverse)
-const HOLD_DURATION = 2;      // seconds to hold at full disorder
-const FRONT_WIDTH = 0.8;      // width of the smooth transition zone (0-1)
-const PROPAGATION_DIRECTION = 1; // 1 = top to bottom, -1 = bottom to top
+const CYCLE_DURATION = 22;    // secondi per un ciclo completo (avanti + pausa + indietro)
+const HOLD_DURATION = 2;      // secondi di pausa a disordine massimo
+const FRONT_WIDTH = 0.8;      // ampiezza della zona di transizione morbida (0-1)
+const PROPAGATION_DIRECTION = 1; // 1 = dall'alto verso il basso, -1 = dal basso verso l'alto
 
-// Mode system: 'auto' = automatic animation, 'mouse' = mouseY control, 'hand' = webcam hand tracking
-const MODE = 'hand';
+// Modalità: 'auto' = animazione automatica, 'mouse' = controllo con mouseY,
+// 'hand' = tracciamento della mano con webcam.
+let MODE = 'hand';
 
-// ---------- Hand tracking variables ----------
-// These store the raw and smoothed values from webcam hand tracking.
-// The webcam feed and landmarks are never drawn to the canvas.
+// ---------- Variabili del tracciamento della mano ----------
+// Contengono i valori grezzi e smussati del tracciamento della mano.
+// Il video della webcam e i punti di riferimento non vengono mai disegnati.
 
-let videoCapture;             // p5 video capture element (hidden)
-let handsTracker;             // MediaPipe Hands instance
-let handDetected = false;     // whether a hand is currently visible
-let lastHandTime = 0;         // timestamp when hand was last seen
+let videoCapture;             // elemento video creato da p5 (nascosto)
+let handsTracker;             // istanza di MediaPipe Hands
+let handDetected = false;     // indica se una mano è attualmente visibile
+let lastHandTime = 0;         // istante in cui la mano è stata vista per l'ultima volta
+let handTrackingActive = false; // true finché il ciclo di tracciamento deve continuare
+let handTrackingErrors = 0;   // errori consecutivi del tracciatore
 
-// Raw values from landmark tracking (0-1 range)
-let rawHandY = 0.5;           // vertical hand position (0 = top, 1 = bottom)
-let rawHandOpenness = 0;      // hand openness (0 = fist, 1 = open)
+// Valori grezzi dei punti di riferimento (intervallo 0-1)
+let rawHandY = 0.5;           // posizione verticale della mano (0 = alto, 1 = basso)
+let rawHandOpenness = 0;      // apertura della mano (0 = pugno, 1 = mano aperta)
 
-// Smoothed values used for animation (exponential moving average)
+// Valori smussati usati per l'animazione (media mobile esponenziale)
 let smoothHandY = 0.5;
 let smoothHandOpenness = 0;
 
-// Smoothing and timing constants
-const HAND_SMOOTHING = 0.05;  // lower = smoother but slower response
-const HAND_TIMEOUT = 2000;    // ms before returning to order when hand is absent
+// Costanti di smussamento e temporizzazione
+const HAND_SMOOTHING = 0.05;  // più basso = più fluido ma più lento a rispondere
+const HAND_TIMEOUT = 2000;    // ms prima di tornare all'ordine se la mano scompare
+const TRACK_INTERVAL = 83;    // ms tra un fotogramma e l'altro (circa 12 fps)
+const MAX_TRACK_ERRORS = 3;   // errori prima di passare alla modalità mouse
 
-// ---------- Audio parameters ----------
-// The sound system follows the same conceptual logic as the visual system:
-//   visual:  position = orderedPosition + fixedOffset * disorder
-//   audio:   frequency = stableFrequency + fixedDetuning * disorder
-// Detuning targets are generated once and never randomized per frame.
+// ---------- Parametri audio ----------
+// Il sistema sonoro segue la stessa logica del sistema visivo:
+//   visivo:  posizione = posizioneOrdinata + scartoFisso * disordine
+//   audio:   frequenza = frequenzaStabile + disassonanzaFissa * disordine
+// Le disassonanze target vengono generate una volta e non cambiano a ogni fotogramma.
 
-const MASTER_VOLUME = 1.0;    // master volume level
-const FUNDAMENTAL = 55;       // Hz — low A1, dark ambient drone
+const MASTER_VOLUME = 1.0;    // volume generale
 
-// The drone is a bed, not the subject. It sits low and gets quieter as the
-// disorder rises, so the melody takes over: the visual and the mix move together.
-const FUNDAMENTAL_VOLUME = 0.15; // level of the drone at disorder = 0
-const DRONE_FADE = 0.6;         // drone drops to 40% of its level at disorder = 1
+const FUNDAMENTAL = 55;       // Hz — A1 basso, drone scuro
 
-// A lowpass filter is the single biggest cure for a harsh, metallic timbre.
-// Every oscillator here is a pure sine, so there is no real high content to
-// remove — but it makes the mix warm instead of buzzy at no musical cost.
-const LOWPASS_CUTOFF = 1200;  // Hz — well above the top melodic note (440 Hz)
-const LOWPASS_Q = 0.5;        // below 1 = gentle, no resonant peak
+// Il drone è un tappeto, non il protagonista: sta in basso e si abbassa
+// quando il disordine cresce, lasciando spazio alla melodia. Visivo e mix
+// si muovono insieme.
+const FUNDAMENTAL_VOLUME = 0.15; // livello del drone a disordine = 0
+const DRONE_FADE = 0.6;         // a disordine = 1 il drone scende al 40% del suo livello
 
-// Detuning is a RATIO, not an absolute Hz value. An absolute value of 30 Hz on a
-// 55 Hz fundamental is a 55% pitch swing — that is what made the drone metallic.
-// As a ratio it always stays a subtle drift, whatever the fundamental frequency is.
-const DETUNE_RATIO = 0.015;   // ±1.5% pitch drift at disorder = 1
-const LFO_RATE = 0.05;        // Hz — very slow wobble
-const LFO_DEPTH = 0.004;      // ±0.4% frequency modulation at disorder = 1
-const AUDIO_SMOOTHING = 0.03; // slightly more inertia than visual smoothing
+// Un filtro passa-basso è il rimedio più efficace contro un timbro duro e metallico.
+// Qui tutti gli oscillatori sono seni puri, quindi non c'è vero contenuto acuto
+// da togliere: il filtro rende però il mix più caldo senza costi musicali.
+const LOWPASS_CUTOFF = 1200;  // Hz — ben sopra la nota melodica più alta (440 Hz)
+const LOWPASS_Q = 0.5;        // sotto 1 = risposta gentile, senza picco di risonanza
 
-// Melodic layer — modal scale for gradual melodic emergence
-const SCALE_ROOT = 220;       // Hz — A3, root of the modal scale
-const SCALE_INTERVALS = [1, 9/8, 5/4, 3/2, 5/3, 2]; // just intonation major-ish
-const NUM_MELODIC_NOTES = 5;  // number of melodic notes in the scale
+// La disassonanza è un RAPPORTO, non un valore assoluto in Hz. Un valore assoluto
+// di 30 Hz su una fondamentale di 55 Hz è uno spostamento del 55%: è quello che
+// rendeva il drone metallico. Come rapporto resta sempre una deriva sottile,
+// qualunque sia la frequenza fondamentale.
+const DETUNE_RATIO = 0.015;   // ±1,5% di deriva a disordine = 1
+const LFO_RATE = 0.05;        // Hz — oscillazione molto lenta
+const LFO_DEPTH = 0.004;      // ±0,4% di modulazione di frequenza a disordine = 1
+const AUDIO_SMOOTHING = 0.03; // inerzia leggermente maggiore rispetto allo smussamento visivo
 
-// Per-note volume. The worst case is the drone plus all notes sounding together,
-// so this must stay small enough that the total never exceeds 1.0.
-// 0.13 * 5 notes + 0.15 drone = 0.80 peak — comfortable headroom.
-const MELODIC_VOLUME = 0.13;  // volume of each melodic note
+// Strato melodico — scala modale per far emergere gradualmente le note
+const SCALE_ROOT = 220;       // Hz — A3, nota fondamentale della scala
+const SCALE_INTERVALS = [1, 9/8, 5/4, 3/2, 5/3, 2]; // intonazione giusta, sorbita come un modo maggiore
+const NUM_MELODIC_NOTES = 5;  // numero di note melodiche nella scala
 
-// Vibrato makes the notes sound played rather than programmed: a slow, small
-// pitch wobble. Rate and depth differ per note and are generated once.
-const VIBRATO_RATE = 5;       // Hz — centre of the random rate range
-const VIBRATO_SPREAD = 1.2;   // Hz — each note gets its own rate around VIBRATO_RATE
-const VIBRATO_DEPTH = 0.004;  // ±0.4% pitch wobble — deeper than this gets rough
+// Volume per nota. Il caso peggiore è il drone più tutte le note insieme,
+// quindi il valore deve restare abbastanza basso che il totale non superi 1.0.
+// 0,13 × 5 note + 0,15 drone = 0,80 di picco — margine comodo.
+const MELODIC_VOLUME = 0.13;  // volume di ciascuna nota melodica
 
-// ---------- Canvas ----------
+// Il vibrato fa sembrare le note suonate invece che programmate: una piccola
+// oscillazione lenta dell'altezza. Velocità e profondità sono diverse per ogni
+// nota e vengono generate una volta.
+const VIBRATO_RATE = 5;       // Hz — centro dell'intervallo casuale delle velocità
+const VIBRATO_SPREAD = 1.2;   // Hz — ogni nota ha una velocità intorno a VIBRATO_RATE
+const VIBRATO_DEPTH = 0.004;  // ±0,4% di oscillazione — oltre diventa ruvido
 
-const MARGIN = 60; // white border around the grid
+// ---------- Tela ----------
 
-// ---------- Square data ----------
+const MARGIN = 60; // margine bianco attorno alla griglia
+const HINT_FONT_SIZE = 24; // dimensione dell'indicazione, in pixel
+const HINT_PADDING = 10; // spaziatura intorno al testo, in pixel
+const HINT_BACKGROUND_ALPHA = 1; // opacità del fondo bianco
+const HINT_BORDER_WIDTH = 2; // spessore del bordo, in pixel
 
-// Each square stores its fixed target values, generated once at initialization.
-// This ensures the animation is deterministic and the final state (full disorder)
-// exactly matches the static reconstruction.
+// ---------- Dati dei quadrati ----------
+
+// Ogni quadrato conserva i propri valori target fissi, generati una sola volta
+// all'inizio. Così l'animazione è deterministica e lo stato finale (disordine
+// massimo) corrisponde esattamente alla ricostruzione statica.
 const squares = [];
 
 function setup() {
@@ -121,13 +134,14 @@ function setup() {
   const canvasHeight = ROWS * SPACING_Y + MARGIN * 2;
   createCanvas(canvasWidth, canvasHeight);
 
-  // Fix the random seed so the composition is identical on every load.
+  // Fissa il seme casuale, così la composizione è identica a ogni caricamento.
   randomSeed(SEED);
 
-  // Generate all target values once, in the same order as the static reconstruction.
-  // These values are fixed and never change during animation.
-  // We use lerp() to interpolate between the ordered state and these targets,
-  // rather than calling random() every frame, so the motion is smooth and deterministic.
+  // Genera tutti i valori target una sola volta, nello stesso ordine della
+  // ricostruzione statica. Questi valori sono fissi e non cambiano durante
+  // l'animazione. Usiamo lerp() per interpolare tra lo stato ordinato e questi
+  // target, invece di chiamare random() a ogni fotogramma: il moto resta fluido
+  // e deterministico.
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const progress = row / (ROWS - 1);
@@ -145,97 +159,109 @@ function setup() {
     }
   }
 
-  // Initialize hand tracking if in hand mode
-  // Gracefully fall back to mouse control if webcam/hand tracking fails
+  // Inizia il tracciamento della mano se la modalità è 'hand'.
+  // Se webcam o tracciamento falliscono, passa con grazia al controllo col mouse.
   if (MODE === 'hand') {
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try {
         setupHandTracking();
       } catch (e) {
-        console.warn('Hand tracking initialization failed, falling back to mouse mode:', e);
-        MODE = 'mouse';
+        console.warn('Avvio del tracciamento della mano fallito, passo alla modalità mouse:', e);
+        passaAMouse();
       }
     } else {
-      console.warn('Webcam API not available, falling back to mouse mode');
-      MODE = 'mouse';
+      console.warn('API della webcam non disponibile, passo alla modalità mouse');
+      passaAMouse();
     }
   }
 
-  // Subtle UI: volume control and hint in the bottom-right corner
-  // Elements are vertically separated to avoid overlap
-  hint = createP('click to enable audio — move hand to play');
-  hint.style('font-size', '10px');
-  hint.style('color', '#999');
+  // Indicazione al centro del canvas: scompare alla prima interazione.
+  // In modalità mano mostra prima il caricamento del modello MediaPipe.
+  const testoIniziale = MODE === 'hand'
+    ? 'clicca per attivare l’audio — caricamento del tracciamento…'
+    : 'clicca per attivare l’audio — muovi il mouse per giocare';
+  hint = createP(testoIniziale);
+  hint.style('font-size', HINT_FONT_SIZE + 'px');
+  hint.style('color', '#000');
+  hint.style('font-weight', 'bold');
+  hint.style('background', `rgba(255, 255, 255, ${HINT_BACKGROUND_ALPHA})`);
+  hint.style('border', `${HINT_BORDER_WIDTH}px solid #000`);
+  hint.style('padding', HINT_PADDING + 'px');
+  hint.style('border-radius', HINT_PADDING / 2 + 'px');
   hint.style('position', 'absolute');
-  hint.style('bottom', '8px');
-  hint.style('right', '10px');
+  hint.style('top', '50%');
+  hint.style('left', '50%');
+  hint.style('transform', 'translate(-50%, -50%)');
+  hint.style('text-align', 'center');
   hint.style('margin', '0');
   hint.style('pointer-events', 'none');
   hint.style('user-select', 'none');
 
 }
 
-// Standard smoothstep function for smooth transitions.
-// Returns 0 when x <= edge0, 1 when x >= edge1, with a smooth S-curve in between.
-function smoothstep(edge0, edge1, x) {
+// Funzione standard per transizioni morbide, rinominata per non confliggere
+// con la smoothstep() integrata in p5.js 2.
+// Restituisce 0 per x <= edge0, 1 per x >= edge1, con una curva a S in mezzo.
+function transizioneMorbida(edge0, edge1, x) {
   const t = constrain((x - edge0) / (edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
 }
 
-// ---------- Audio variables ----------
-// Oscillators and gain nodes for the ambient drone.
-// All detuning targets are generated once and fixed.
+// ---------- Variabili audio ----------
+// Oscillatori e nodi di guadagno del drone ambient.
+// Tutti i target di disassonanza vengono generati una volta e restano fissi.
 
 let audioInitialized = false;
 let masterGain;
 let lowpassFilter;
 let limiter;
 let fundamentalOsc;
-let melodicOscs = [];    // melodic notes that emerge with disorder
+let melodicOscs = [];    // note melodiche che emergono con il disordine
 
-// Fixed detuning target for the fundamental (generated once, like the visual targets).
-// Analogue of the squares' fixed offsets: each sound drifts by its own fixed amount.
+// Target fisso di disassonanza della fondamentale (generato una volta, come i target visivi).
+// È l'analogo degli scarti fissi dei quadrati: ogni suono deriva del suo ammontare costante.
 let fundamentalDetuning = 0;
 
-// Fixed vibrato character of each melodic note (generated once)
-const noteDetunes = [];          // small pitch offset from exact just intonation
-const noteVibratoRates = [];     // Hz — vibrato speed per note
-const noteVibratoPhases = [];    // radians — starting point of each note's vibrato
+// Carattere del vibrato di ogni nota melodica (generato una volta)
+const noteDetunes = [];          // piccolo scarto di altezza rispetto all'intonazione giusta
+const noteVibratoRates = [];     // Hz — velocità del vibrato di ogni nota
+const noteVibratoPhases = [];    // radianti — punto di partenza del vibrato di ogni nota
 
-// Smoothed audio values (slightly more inertia than visual)
+// Valori audio smussati (inerzia leggermente maggiore rispetto al visivo)
 let smoothAudioDisorder = 0;
 
-// UI elements (declared globally so draw() can access them)
+// Elementi dell'interfaccia (dichiarati globalmente perché draw() li usi)
 let hint;
 
-// ---------- Audio functions ----------
+// ---------- Funzioni audio ----------
 
-// Initialize the audio context and create the drone sound system.
-// Must be called after user interaction (browser autoplay policy).
+// Inizializza il contesto audio e crea il sistema sonoro del drone.
+// Va chiamato dopo un'interazione dell'utente (regole di autoplay del browser).
 function initAudio() {
   if (audioInitialized) return;
   audioInitialized = true;
 
-  // Gain chain: oscillators → masterGain → lowpass → limiter → speakers
-  // The limiter only ever catches a genuine overshoot. It is deliberately not
-  // used to hold the level down: continuous heavy compression is what makes a
-  // mix sound squashed, and a squashed low drone sounds metallic.
+  // Catena di guadagno: oscillatori → masterGain → passa-basso → limiter → altoparlanti
+  // Il limiter interviene solo su un vero superamento di livello. Non è usato
+  // per tenere basso il volume: una compressione continua schiaccia il mix,
+  // e un drone basso schiacciato suona metallico.
   const audioContext = getAudioContext();
 
   masterGain = audioContext.createGain();
   masterGain.gain.value = MASTER_VOLUME;
 
-  // Warmth: roll off everything above the top melodic note. Sines have almost no
-  // energy there, so this only smooths over any distortion the sum introduced.
+  // Calore: taglia tutto ciò che sta sopra la nota melodica più alta. I seni
+  // non hanno quasi energia lassù, quindi questo addolcisce solo le eventuali
+  // distorsioni introdotte dalla somma.
   lowpassFilter = audioContext.createBiquadFilter();
   lowpassFilter.type = 'lowpass';
   lowpassFilter.frequency.value = LOWPASS_CUTOFF;
   lowpassFilter.Q.value = LOWPASS_Q;
 
   limiter = audioContext.createDynamicsCompressor();
-  limiter.threshold.value = -1;  // in dB: only acts just below full scale
-  limiter.knee.value = 0;         // hard knee, so it stays out of the way
-  limiter.ratio.value = 20;       // brickwall — catches peaks, does not pump
+  limiter.threshold.value = -1;  // in dB: interviene solo appena sotto il livello massimo
+  limiter.knee.value = 0;         // ginocchio duro, così resta fuori dal percorso
+  limiter.ratio.value = 20;       // brickwall — prende i picchi, non pompa
   limiter.attack.value = 0.003;
   limiter.release.value = 0.25;
 
@@ -243,34 +269,40 @@ function initAudio() {
   lowpassFilter.connect(limiter);
   limiter.connect(audioContext.destination);
 
-  // Fundamental oscillator — a soft sine wave, always present.
-  // A sine has no upper harmonics, so it reads as a smooth drone rather than a buzzy tone.
+  // Oscillatore fondamentale — un seno morbido, sempre presente.
+  // Un seno non ha armoniche superiori, quindi suona come un drone fluido
+  // invece che come un tono ronzante.
   fundamentalOsc = new p5.Oscillator('sine');
-  fundamentalOsc.freq(FUNDAMENTAL);
-  fundamentalOsc.amp(FUNDAMENTAL_VOLUME);
+  fundamentalOsc.freq(FUNDAMENTAL, 0);
+  fundamentalOsc.amp(FUNDAMENTAL_VOLUME, 0);
+  // In p5.sound 0.4.1 l'uscita è già collegata agli altoparlanti: staccala
+  // per far passare il suono solo dalla catena masterGain → filtro → limiter.
+  fundamentalOsc.disconnect();
   fundamentalOsc.connect(masterGain);
   fundamentalOsc.start();
 
-  // Fixed detuning target for the fundamental, generated once and never changed.
-  // Same idea as the squares' fixed offsets: a constant target, reached gradually.
-  // Stored as a ratio of the fundamental, so the drift stays subtle and musical.
+  // Target fisso di disassonanza della fondamentale, generato una volta e mai cambiato.
+  // Stessa idea degli scarti fissi dei quadrati: un target costante, raggiunto gradualmente.
+  // È memorizzato come rapporto con la fondamentale, così la deriva resta sottile e musicale.
   fundamentalDetuning = random(-DETUNE_RATIO, DETUNE_RATIO);
 
-  // Melodic oscillators — notes from the modal scale, introduced gradually.
-  // Each note gets its own fixed vibrato rate, phase and micro-detune, generated once.
-  // Like the squares' offsets, these are constant targets, never re-randomised.
+  // Oscillatori melodici — note della scala modale, introdotte gradualmente.
+  // Ogni nota riceve una velocità di vibrato, una fase e una micro-disassonanza
+  // proprie, generate una volta. Come gli scarti dei quadrati, sono target
+  // costanti, mai rigenerati a ogni fotogramma.
   for (let i = 0; i < NUM_MELODIC_NOTES; i++) {
     const osc = new p5.Oscillator('sine');
 
-    // Tiny fixed offset from exact just intonation. Without it the chords are
-    // perfectly static and sound synthetic; a few cents of "imprecision" makes
-    // them sound like they are being played.
+    // Piccolo scarto fisso rispetto all'intonazione giusta. Senza di esso gli
+    // accordi sarebbero perfettamente statici e suonerebbero sintetici; qualche
+    // centesimo di "imprecisione" li fa sembrare suonati.
     noteDetunes.push(random(-0.004, 0.004));
     noteVibratoRates.push(VIBRATO_RATE + random(-VIBRATO_SPREAD, VIBRATO_SPREAD));
-    noteVibratoPhases.push(random(0, 2 * PI)); // start each note at a different point
+    noteVibratoPhases.push(random(0, 2 * PI)); // ogni nota parte da un punto diverso
 
-    osc.freq(SCALE_ROOT * SCALE_INTERVALS[i]);
-    osc.amp(0); // start silent, introduced gradually with disorder
+    osc.freq(SCALE_ROOT * SCALE_INTERVALS[i], 0);
+    osc.amp(0, 0); // parte dal silenzio, emerge con il disordine
+    osc.disconnect(); // come per il drone: evita l'uscita diretta agli altoparlanti
     osc.connect(masterGain);
     osc.start();
     melodicOscs.push(osc);
@@ -278,38 +310,39 @@ function initAudio() {
 
 }
 
-// Update the audio system based on the current disorder value.
-// Uses the same conceptual logic as the visual system:
-//   frequency = stableFrequency + fixedDetuning * disorder
-// The LFO modulation is computed in the time domain for robustness.
+// Aggiorna il sistema audio in base al valore di disordine corrente.
+// Usa la stessa logica concettuale del sistema visivo:
+//   frequenza = frequenzaStabile + disassonanzaFissa * disordine
+// La modulazione LFO è calcolata nel tempo per robustezza.
 function updateAudio(disorder) {
   if (!audioInitialized) return;
 
-  // Apply strong smoothing for fluid, continuous evolution
-  // Slightly more inertia than visual smoothing
+  // Smussamento forte per un'evoluzione fluida e continua
+  // Inerzia leggermente maggiore rispetto a quella visiva
   smoothAudioDisorder = lerp(smoothAudioDisorder, disorder, AUDIO_SMOOTHING);
   const d = smoothAudioDisorder;
   const t = millis() / 1000;
 
-  // Fundamental: stable frequency + fixed detuning drift + slow LFO modulation.
-  // frequency = FUNDAMENTAL * (1 + detune + lfo), so both terms are pitch ratios.
+  // Fondamentale: frequenza stabile + deriva di disassonanza fissa + LFO lenta.
+  // frequenza = FUNDAMENTAL * (1 + disassonanza + lfo): entrambi i termini sono rapporti.
   const lfoValue = Math.sin(2 * PI * LFO_RATE * t) * LFO_DEPTH * d;
   fundamentalOsc.freq(FUNDAMENTAL * (1 + fundamentalDetuning * d + lfoValue));
 
-  // The drone recedes as the melody emerges, so the mix goes from drone to melody
-  // as disorder rises. Visual and sonic weight move together.
-  fundamentalOsc.amp(FUNDAMENTAL_VOLUME * (1 - DRONE_FADE * d));
+  // Il drone si ritira mentre la melodia emerge: all'aumentare del disordine
+  // il mix passa dal drone alla melodia. Peso visivo e sonoro si muovono insieme.
+  fundamentalOsc.amp(FUNDAMENTAL_VOLUME * (1 - DRONE_FADE * d), 0);
 
-  // Melodic notes: introduced one by one as disorder increases.
-  // Each note is always present once it has emerged — nothing switches off, so
-  // raising the disorder only ever adds notes, exactly like the visual front.
+  // Note melodiche: entrano una a una all'aumentare del disordine.
+  // Ogni nota, una volta emersa, resta presente: niente si spegne, quindi
+  // aumentare il disordine aggiunge solo note, esattamente come il fronte visivo.
   for (let i = 0; i < NUM_MELODIC_NOTES; i++) {
-    // Staggered thresholds: first note at d=0.1, last note at d=0.9
+    // Soglie sfalsate: prima nota a d=0,1, ultima a d=0,9
     const threshold = 0.1 + (i / NUM_MELODIC_NOTES) * 0.8;
-    const noteLevel = smoothstep(threshold, threshold + 0.15, d);
-    melodicOscs[i].amp(noteLevel * MELODIC_VOLUME);
+    const noteLevel = transizioneMorbida(threshold, threshold + 0.15, d);
+    melodicOscs[i].amp(noteLevel * MELODIC_VOLUME, 0);
 
-    // Vibrato: a slow pitch wobble that makes each note sound played, not programmed
+    // Vibrato: una piccola oscillazione lenta dell'altezza che fa sembrare
+    // la nota suonata, non programmata.
     const vibrato =
       Math.sin(2 * PI * noteVibratoRates[i] * t + noteVibratoPhases[i]) *
       VIBRATO_DEPTH *
@@ -318,59 +351,97 @@ function updateAudio(disorder) {
   }
 }
 
-// ---------- Hand tracking ----------
+// ---------- Tracciamento della mano ----------
 
-// Initialize webcam capture and MediaPipe Hands tracker.
-// The video feed is hidden and never drawn to the canvas.
+// Inizializza la cattura della webcam e il tracciatore MediaPipe Hands.
+// Il video non viene mai disegnato sul canvas.
 function setupHandTracking() {
   videoCapture = createCapture(VIDEO);
-  videoCapture.size(320, 240); // small size for performance
-  videoCapture.hide();         // completely hidden from the canvas
+  videoCapture.size(320, 240); // piccole dimensioni per le prestazioni
+  videoCapture.hide();         // completamente nascosto rispetto al canvas
 
   handsTracker = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
   });
   handsTracker.setOptions({
     maxNumHands: 1,
-    modelComplexity: 0, // lite model for performance
+    modelComplexity: 0, // modello leggero per le prestazioni
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5
   });
   handsTracker.onResults(onHandResults);
 
-  // Throttled hand tracking loop — send frames at ~12fps to avoid overwhelming the tracker
+  // Un solo fotogramma alla volta. Soprattutto, il modello viene inizializzato
+  // una volta sola prima di iniziare: send() lo inizializzerebbe da sé, e più
+  // chiamate sovrapposte creerebbero inizializzazioni concorrenti che si
+  // sovrascrivono i file temporanei.
   let lastTrackTime = 0;
-  const TRACK_INTERVAL = 83; // ms (~12fps)
   const trackHand = async () => {
-    requestAnimationFrame(trackHand);
+    if (!handTrackingActive || MODE !== 'hand') return;
+
     const now = millis();
-    if (now - lastTrackTime < TRACK_INTERVAL) return;
-    lastTrackTime = now;
-    if (videoCapture.elt && videoCapture.elt.readyState >= 2) {
+    if (now - lastTrackTime >= TRACK_INTERVAL &&
+        videoCapture.elt && videoCapture.elt.readyState >= 2) {
+      lastTrackTime = now;
       try {
         await handsTracker.send({ image: videoCapture.elt });
+        handTrackingErrors = 0;
       } catch (e) {
-        // Silently ignore frame processing errors
+        handTrackingErrors++;
+        if (handTrackingErrors >= MAX_TRACK_ERRORS) {
+          console.warn('Tracciamento della mano non disponibile, passo alla modalità mouse:', e);
+          passaAMouse();
+          return;
+        }
       }
     }
+
+    // Il ciclo riparte solo dopo che la send() precedente è finita.
+    requestAnimationFrame(trackHand);
   };
-  trackHand();
+
+  handsTracker.initialize().then(() => {
+    if (MODE !== 'hand') return;
+    handTrackingActive = true;
+    if (hint) {
+      hint.elt.textContent = 'clicca per attivare l’audio — muovi la mano per giocare';
+    }
+    requestAnimationFrame(trackHand);
+  }).catch((e) => {
+    console.warn('Inizializzazione del tracciatore fallita, passo alla modalità mouse:', e);
+    passaAMouse();
+  });
 }
 
-// Process hand tracking results.
-// Calculates vertical hand position and hand openness from landmarks.
+// Disattiva la webcam e continua con il controllo del mouse.
+function passaAMouse() {
+  handTrackingActive = false;
+  MODE = 'mouse';
+
+  // Ferma il flusso della webcam: in modalità mouse non serve più.
+  if (videoCapture && videoCapture.elt && videoCapture.elt.srcObject) {
+    videoCapture.elt.srcObject.getTracks().forEach((track) => track.stop());
+  }
+
+  if (hint) {
+    hint.elt.textContent = 'clicca per attivare l’audio — muovi il mouse per giocare';
+  }
+}
+
+// Elabora i risultati del tracciamento.
+// Calcola la posizione verticale e l'apertura della mano dai punti di riferimento.
 function onHandResults(results) {
   if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
     const landmarks = results.multiHandLandmarks[0];
 
-    // Average Y position of all landmarks (0 = top, 1 = bottom)
+    // Media delle coordinate Y di tutti i punti (0 = alto, 1 = basso)
     let sumY = 0;
     for (const lm of landmarks) {
       sumY += lm.y;
     }
     rawHandY = sumY / landmarks.length;
 
-    // Estimate hand openness from fingertip distances relative to hand size
+    // Stima l'apertura della mano dalla distanza delle dita rispetto alla mano
     const wrist = landmarks[0];
     const middleMCP = landmarks[9];
     const handSize = Math.sqrt(
@@ -378,7 +449,7 @@ function onHandResults(results) {
       Math.pow(wrist.y - middleMCP.y, 2)
     );
 
-    const fingertips = [4, 8, 12, 16, 20]; // thumb, index, middle, ring, pinky
+    const fingertips = [4, 8, 12, 16, 20]; // pollice, indice, medio, anulare, mignolo
     let sumDist = 0;
     for (const idx of fingertips) {
       const tip = landmarks[idx];
@@ -390,7 +461,7 @@ function onHandResults(results) {
     const avgDist = sumDist / fingertips.length;
     const normalizedDist = avgDist / handSize;
 
-    // Map normalized distance to openness: closed fist ≈ 0, open hand ≈ 1
+    // Mappa la distanza normalizzata all'apertura: pugno ≈ 0, mano aperta ≈ 1
     rawHandOpenness = constrain((normalizedDist - 0.5) / 1.0, 0, 1);
 
     handDetected = true;
@@ -401,60 +472,61 @@ function onHandResults(results) {
 }
 
 function draw() {
-  const t = millis() / 1000; // time in seconds
+  const t = millis() / 1000; // tempo in secondi
   const transitionDuration = (CYCLE_DURATION - HOLD_DURATION) / 2;
 
-  // The front must travel from outside the composition to outside the composition
-  // so that all rows reach full disorder (or full order) at the extremes.
+  // Il fronte deve viaggiare da fuori la composizione a fuori la composizione,
+  // così tutte le righe raggiungono il disordine (o l'ordine) massimo agli estremi.
   const FRONT_START = -FRONT_WIDTH / 2;
   const FRONT_END = 1 + FRONT_WIDTH / 2;
 
   let frontPosition;
   let isForward;
-  let intensity = 1; // disorder intensity multiplier (1 = full Schotter targets)
+  let intensity = 1; // moltiplicatore del disordine (1 = target Schotter pieni)
 
   if (MODE === 'hand') {
-    // Hand tracking mode: hand Y controls propagation, hand openness controls intensity.
-    // The interaction does not modify Nees' generative rule — it allows
-    // the viewer to manually navigate through the same order-to-disorder
-    // process that the automatic version unfolds over time.
+    // Tracciamento della mano: la posizione Y controlla la propagazione,
+    // l'apertura controlla l'intensità. L'interazione non modifica la regola
+    // generativa di Nees: permette a chi guarda di percorrere manualmente lo
+    // stesso processo ordine → disordine che la versione automatica svolge nel tempo.
     isForward = true;
 
-    // Apply temporal smoothing for fluid, jitter-free response
+    // Smussamento temporale per una risposta fluida e senza salti
     smoothHandY = lerp(smoothHandY, rawHandY, HAND_SMOOTHING);
     smoothHandOpenness = lerp(smoothHandOpenness, rawHandOpenness, HAND_SMOOTHING);
 
-    // If hand disappears, hold last valid state briefly, then return toward order
+    // Se la mano scompare, mantiene brevemente l'ultimo stato valido,
+    // poi torna gradualmente verso l'ordine.
     if (!handDetected && millis() - lastHandTime > HAND_TIMEOUT) {
       smoothHandY = lerp(smoothHandY, 0, HAND_SMOOTHING);
       smoothHandOpenness = lerp(smoothHandOpenness, 0, HAND_SMOOTHING);
     }
 
-    // Map hand Y to front position (top = ordered, bottom = complete Schotter)
+    // Mappa la Y della mano sulla posizione del fronte (alto = ordinato, basso = Schotter completo)
     frontPosition = FRONT_START + (FRONT_END - FRONT_START) * smoothHandY;
 
-    // Hand openness controls disorder intensity
+    // L'apertura della mano controlla l'intensità del disordine
     intensity = smoothHandOpenness;
   } else if (MODE === 'mouse') {
-    // Mouse mode: mouseY controls the disorder progression.
+    // Modalità mouse: mouseY controlla la progressione del disordine.
     isForward = true;
     const clampedMouseY = constrain(mouseY, 0, height);
     frontPosition = FRONT_START + (FRONT_END - FRONT_START) * (clampedMouseY / height);
   } else {
-    // Automatic animation: front moves forward, holds, then reverses.
-    // Sinusoidal easing ensures smooth acceleration and deceleration.
+    // Animazione automatica: il fronte avanza, si ferma, poi torna indietro.
+    // L'easing sinusoidale garantisce accelerazione e decelerazione morbide.
     const cycleTime = t % CYCLE_DURATION;
     if (cycleTime < transitionDuration) {
-      // Forward phase: disorder accumulates from top to bottom
+      // Fase in avanti: il disordine si accumula dall'alto verso il basso
       isForward = true;
       const phaseT = cycleTime / transitionDuration;
       frontPosition = FRONT_START + (FRONT_END - FRONT_START) * (1 - cos(PI * phaseT)) / 2;
     } else if (cycleTime < transitionDuration + HOLD_DURATION) {
-      // Hold phase: complete Schotter state is clearly visible
+      // Fase di pausa: lo stato Schotter completo è ben visibile
       isForward = true;
       frontPosition = FRONT_END;
     } else {
-      // Reverse phase: order accumulates from top to bottom
+      // Fase inversa: l'ordine si accumula dall'alto verso il basso
       isForward = false;
       const phaseT = (cycleTime - transitionDuration - HOLD_DURATION) / transitionDuration;
       frontPosition = FRONT_END - (FRONT_END - FRONT_START) * (1 - cos(PI * phaseT)) / 2;
@@ -466,61 +538,63 @@ function draw() {
   strokeWeight(1);
   noFill();
 
-  // Hide hint after first interaction
+  // Nasconde l'indicazione dopo la prima interazione
   if (audioInitialized && hint) {
     hint.hide();
   }
 
-  // Calculate global disorder value for audio (0 = ordered, 1 = complete Schotter)
-  // This uses the same progression value that controls the visual transformation
+  // Calcola il valore globale di disordine per l'audio (0 = ordinato, 1 = Schotter completo)
+  // Usa lo stesso valore di progressione che controlla la trasformazione visiva.
   let audioDisorder;
   if (MODE === 'hand') {
     audioDisorder = smoothHandY * smoothHandOpenness;
   } else if (MODE === 'mouse') {
     audioDisorder = constrain(mouseY / height, 0, 1);
   } else {
-    // Auto mode: normalize frontPosition to 0-1 range
+    // Modalità automatica: normalizza frontPosition nell'intervallo 0-1
     audioDisorder = constrain((frontPosition - FRONT_START) / (FRONT_END - FRONT_START), 0, 1);
   }
   updateAudio(audioDisorder);
 
-  // The original artwork distributes increasing disorder spatially from top to bottom.
-  // This animation unfolds that same transition progressively through time.
+  // L'opera originale distribuisce il disordine crescente nello spazio,
+  // dall'alto verso il basso. Questa animazione svolge la stessa transizione
+  // progressivamente nel tempo.
   //
-  // Forward phase: rows behind the front are fully disordered and stay that way;
-  // rows in the broad transition zone gradually move toward their target;
-  // rows ahead of the front remain ordered. The disordered area only grows.
+  // Fase in avanti: le righe dietro il fronte sono completamente disordinate
+  // e restano tali; quelle nella zona di transizione si avvicinano gradualmente
+  // al loro target; quelle davanti restano ordinate. L'area disordinata cresce solo.
   //
-  // Reverse phase: the same principle in reverse — rows behind the front are
-  // fully ordered and stay that way; rows in the transition zone gradually return
-  // to order; rows ahead of the front remain disordered. The ordered area only grows.
+  // Fase inversa: lo stesso principio al contrario — le righe dietro il fronte
+  // sono completamente ordinate e restano tali; quelle nella zona di transizione
+  // tornano gradualmente all'ordine; quelle davanti restano disordinate.
+  // L'area ordinata cresce solo.
   for (let row = 0; row < ROWS; row++) {
     const rowProgress = row / (ROWS - 1);
 
-    // Apply propagation direction: flip rowProgress for bottom → top
+    // Applica la direzione di propagazione: inverte rowProgress per andare dal basso verso l'alto
     const effectiveRowProgress = PROPAGATION_DIRECTION === 1 ? rowProgress : 1 - rowProgress;
 
-    // Smooth cumulative transition using smoothstep.
-    // rawDisorder = 0 for rows well behind the front, 1 for rows well ahead.
-    const rawDisorder = smoothstep(
+    // Transizione cumulativa morbida.
+    // rawDisorder = 0 per le righe ben dietro il fronte, 1 per quelle ben davanti.
+    const rawDisorder = transizioneMorbida(
       frontPosition - FRONT_WIDTH / 2,
       frontPosition + FRONT_WIDTH / 2,
       effectiveRowProgress
     );
 
-    // Forward: rows behind front → 1 (disordered), rows ahead → 0 (ordered)
-    // Reverse: rows behind front → 0 (ordered), rows ahead → 1 (disordered)
+    // Avanti: righe dietro il fronte → 1 (disordinate), davanti → 0 (ordinate)
+    // Indietro: righe dietro il fronte → 0 (ordinate), davanti → 1 (disordinate)
     const localDisorder = isForward ? 1 - rawDisorder : rawDisorder;
 
     for (let col = 0; col < COLS; col++) {
       const idx = row * COLS + col;
       const sq = squares[idx];
 
-      // Interpolate position and rotation using lerp().
-      // At localDisorder = 0: square is at its grid position with zero rotation.
-      // At localDisorder = 1: square is at its target displaced/rotated state,
-      // exactly matching the static reconstruction.
-      // intensity scales the fixed Schotter targets (hand openness or default 1).
+      // Interpola posizione e rotazione con lerp().
+      // A localDisorder = 0: il quadrato è nella sua posizione di griglia, senza rotazione.
+      // A localDisorder = 1: è nel suo stato target spostato e ruotato,
+      // esattamente come nella ricostruzione statica.
+      // intensity scala i target Schotter fissi (apertura della mano, o 1 di default).
       const x = lerp(sq.baseX, sq.baseX + sq.targetOffsetX * intensity, localDisorder);
       const y = lerp(sq.baseY, sq.baseY + sq.targetOffsetY * intensity, localDisorder);
       const angle = lerp(0, sq.targetRotation * intensity, localDisorder);
@@ -535,7 +609,7 @@ function draw() {
   }
 }
 
-// Initialize audio on first user interaction (browser autoplay policy)
+// Attiva l'audio alla prima interazione dell'utente (regole di autoplay del browser)
 function mousePressed() {
   if (!audioInitialized) {
     userStartAudio();

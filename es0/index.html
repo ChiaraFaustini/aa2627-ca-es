@@ -1,15 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Schotter — Georg Nees (1968) — Static Reconstruction</title>
+  <title>Schotter — Georg Nees (1968) — ricostruzione animata</title>
   <link rel="stylesheet" href="style.css">
+  <!-- MediaPipe scarica circa 11 MB: avvia i file più grossi prima degli script -->
+  <link rel="preload" as="fetch" href="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands_solution_simd_wasm_bin.wasm" crossorigin="anonymous">
+  <link rel="preload" as="fetch" href="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands_solution_packed_assets.data" crossorigin="anonymous">
+  <link rel="preload" as="fetch" href="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hand_landmark_lite.tflite" crossorigin="anonymous">
 </head>
 <body>
-  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/addons/p5.sound.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5@2.3.3/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5.sound@0.4.1/dist/p5.sound.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
   <script src="sketch.js"></script>
 </body>
 </html>
