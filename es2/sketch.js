@@ -17,7 +17,11 @@
 // per primi e finiscono sotto un velo, così agli incroci chi sta in
 // superficie passa sopra. Il tessuto ha una trama di rumore a due scale,
 // che sta anche sopra la rete: i vasi ci sono dentro, non appoggiati
-// sopra. La fotografia coglie un istante del battito: un'onda di pressione
+// sopra. A ogni clic cambia la direzione del chiaroscuro: il chiaro non sta
+// sempre in alto, può cadere di lato o dal basso. Sfondo, sangue e capillari
+// leggono tutti la stessa proiezione, così nessun vaso finisce più chiaro
+// del tessuto. La macchia di luce schiarisce soltanto.
+// La fotografia coglie un istante del battito: un'onda di pressione
 // scende lungo i rami e li dilata, e ogni livello è un poco in ritardo sul
 // padre — il movimento c'è, ma congelato nell'immagine. In chiusura gli
 // artefatti della fotografia: sfocatura leggera, piano focale,
@@ -65,6 +69,11 @@ let luceX;                  // verso della luce, ricavato da angoloLuce
 let luceY;
 let intensitaTexture;       // grana della fotografia: variazione per pixel
 let numeroMacchieSfondo;    // variazioni di colore sotto la rete
+let angoloChiaroscuro;      // direzione del gradiente: 0 = orizzontale, PI/2 = verticale
+let luceSfondoX;            // centro della macchia di luce: dove il tessuto è più chiaro
+let luceSfondoY;
+let raggioLuceSfondo;       // estensione della macchia di luce, in pixel
+let intensitaLuceSfondo;    // quanto la macchia schiarisce il tessuto, da 0 a 1
 let numeroVelature;         // velature di tessuto sopra la rete
 let intensitaVignettatura;  // ombra fotografica ai bordi del quadro, da 0 a 1
 let ampiezzaSerpeggio;      // quanto i vasi serpeggiano: frazione della lunghezza
@@ -83,16 +92,16 @@ let faseBattito = 0;         // l'istante del battito che la fotografia congela
 let ampiezzaBattito;          // quanto il battito dilata i vasi: frazione del raggio
 let ritardoBattito;           // il ritardo di ogni livello sul padre: l'onda scende
 
-// Fermate del colore del sangue, dall'alto al basso: il vaso è una colonna
-// scura dentro il tessuto chiaro, e scurisce scendendo in profondità
+// Fermate del colore del sangue, dal lato illuminato a quello in ombra: il
+// vaso è una colonna scura dentro il tessuto chiaro, e scurisce verso l'ombra
 let fermateVasi = [
     [ 0.00, [206, 118, 102] ],   // sangue ossigenato, in superficie
     [ 0.50, [164,  66,  60] ],   // rosso pieno
     [ 1.00, [ 88,  24,  38] ],   // sangue venoso, profondo
 ];
 
-// Fermate del gradiente dello sfondo, dall'alto al basso: toni di carne che
-// affondano verso il sangue venoso scuro
+// Fermate del gradiente dello sfondo, dal lato illuminato a quello in ombra:
+// toni di carne che affondano verso il sangue venoso scuro
 let fermateSfondo = [
     [ 0.00, [255, 241, 232] ],   // avorio rosato
     [ 0.14, [250, 226, 212] ],   // carne chiara
@@ -132,7 +141,7 @@ function disegnaVaso( x, y, lunghezza, spessore, angolo, livello ) {
 
     // il colore scorre lungo il tratto: parte dal colore del punto di
     // partenza e arriva a quello del punto di arrivo
-    trattoVaso( punti, spessore, coloreVaso( y ), coloreVaso( fine.y ), livello );
+    trattoVaso( punti, spessore, coloreVaso( x, y ), coloreVaso( fine.x, fine.y ), livello );
 
     // campiono alcuni punti del tratto: servono ai capillari
     trattoCorrente++;
@@ -231,6 +240,11 @@ function setupParametri() {
     ampiezzaBattito = 0.14;      // frazione del raggio: la dilatazione del battito
     ritardoBattito = 0.9;        // radianti di ritardo per livello: l'onda scende
     numeroMacchieSfondo = 14;    // poche: la trama fa il resto
+    angoloChiaroscuro = random( TWO_PI );  // ogni clic illumina un lato diverso
+    luceSfondoX = random( width * 0.15, width * 0.85 );  // la luce cade in un punto nuovo
+    luceSfondoY = random( height * 0.15, height * 0.85 );
+    raggioLuceSfondo = random( 380, 720 );       // pixel: estensione della zona illuminata
+    intensitaLuceSfondo = random( 0.18, 0.38 );  // quanto schiarisce, da 0 a 1
     numeroVelature = 6;
     intensitaVignettatura = 0.8;
     redraw();
@@ -361,11 +375,15 @@ function trattoVaso( punti, spessore, coloreInizio, coloreFine, livello ) {
             rB *= lerp( 0.45, 1, (s + 1) / (ultimo * 0.3) );
         }
 
+        // sui rami sottili orlo chiaro e riflesso spariscono: resta solo il
+        // sangue scuro, senza segni che sembrino messi sopra al tessuto
+        let lucentezza = constrain( ( rA - 1.2 ) / 3, 0, 1 );
+
         // il colore scorre lungo il tratto, con una variazione minuta
         let colore = mescola( coloreInizio, coloreFine, (s + 0.5) / ultimo );
         let scarto = random( -6, 6 );
         colore = [ colore[0] + scarto, colore[1] + scarto * 0.6, colore[2] + scarto * 0.4 ];
-        let parete = mescola( colore, [255, 236, 228], 0.32 );  // la parete lascia passare la luce
+        let parete = mescola( colore, [255, 236, 228], 0.32 * lucentezza );
         let cuore = scurisci( colore, 0.45 );                   // il sangue più denso, al centro
         // il riflesso respira lungo il tubo: la superficie è viva, non plastica
         let respiro = lerp( respiroInizio, respiroFine, (s + 0.5) / ultimo );
@@ -378,16 +396,16 @@ function trattoVaso( punti, spessore, coloreInizio, coloreFine, livello ) {
         // il solco nel tessuto, dal lato opposto alla luce
         nastro( a, b, nx, ny, rA * 1.25, rB * 1.25, -0.2 * quanto, scurisci( colore, 0.6 ), 40 );
         // l'orlo della parete sottile: chiaro, fa passare la luce
-        nastro( a, b, nx, ny, rA * 1.06, rB * 1.06, 0, parete, 170 );
+        nastro( a, b, nx, ny, rA * 1.06, rB * 1.06, 0, parete, 170 * lucentezza );
         // la colonna di sangue: scura e decisa
         nastro( a, b, nx, ny, rA * 0.82, rB * 0.82, 0, colore, 250 );
         // il cuore della colonna: il sangue più denso, se il vaso è largo
         if ( rA > 1.6 )
             nastro( a, b, nx, ny, rA * 0.42, rB * 0.42, 0, cuore, 130 );
         // il riflesso bagnato: stretto, dal lato della luce, solo a tratti
-        if ( rA > 1 )
+        if ( rA > 1 && lucentezza > 0 )
             nastro( a, b, nx, ny, max( rA * 0.15, 0.4 ), max( rB * 0.15, 0.4 ),
-                    0.6 * quanto, [255, 238, 230], 120 * respiro );
+                    0.6 * quanto, [255, 238, 230], 120 * respiro * lucentezza );
     }
 }
 
@@ -408,11 +426,11 @@ function scurisci( c, f ) {
     return [ c[0] * (1 - f), c[1] * (1 - f), c[2] * (1 - f) ];
 }
 
-// Colore del sangue a una certa altezza, spostato dall'ossigenazione del
-// vaso: l'arteria è più rossa e viva, la vena più cupa e appena blu. Alla
-// stessa altezza è sempre lo stesso colore: i tratti si innestano senza salti
-function coloreVaso( y ) {
-    let c = coloreAlleFermate( fermateVasi, constrain( y / height, 0, 1 ) );
+// Colore del sangue in un punto, spostato dall'ossigenazione del vaso:
+// l'arteria è più rossa e viva, la vena più cupa e appena blu. Nello stesso
+// punto è sempre lo stesso colore: i tratti si innestano senza salti
+function coloreVaso( x, y ) {
+    let c = coloreAlleFermate( fermateVasi, quota( x, y ) );
     return [ c[0] + ossigenazioneVaso * 24,
              c[1] - ossigenazioneVaso * 12,
              c[2] - ossigenazioneVaso * 8 ];
@@ -459,8 +477,8 @@ function capillari() {
 }
 
 // Un capillare: serpeggia fra due punti come i vasi — lo stesso percorso a
-// punti, con il rumore che lo torce — e resta un filo tenue, più chiaro
-// dei vasi, perso nel tessuto
+// punti, con il rumore che lo torce — e resta un filo tenue di sangue dentro
+// il tessuto, più scuro del tessuto tutto intorno
 function capillare( p, q ) {
     let mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
     let dx = q.x - p.x, dy = q.y - p.y;
@@ -470,7 +488,9 @@ function capillare( p, q ) {
     let cx = mx + nx * arco, cy = my + ny * arco;
     // curva di base con il controllo raddoppiato: passa per percorso()
     let punti = percorso( p.x, p.y, cx, cy, cx, cy, q.x, q.y, lunghezza );
-    let colore = mescola( coloreVaso( my ), [255, 235, 224], 0.45 );
+    // il colore nasce dal tessuto locale, scurito dal sangue: anche dove lo
+    // sfondo è bordeaux il capillare resta una linea scura, non un riflesso
+    let colore = scurisci( mescola( coloreSfondo( quota( mx, my ) ), coloreVaso( mx, my ), 0.5 ), 0.08 );
     let spessore = max( 0.8, min( p.spessore, q.spessore ) * 0.55 );
     noFill();
     strokeJoin( ROUND );
@@ -487,25 +507,62 @@ function capillare( p, q ) {
     endShape();
 }
 
-// Sfondo: gradiente verticale riga per riga, qualche macchia grande di
-// variazione, e la trama del tessuto a due scale
+// Sfondo: gradiente lungo l'asse del chiaroscuro, qualche macchia grande di
+// variazione, la trama del tessuto a due scale e la macchia di luce
 function sfondo() {
     noStroke();
-    for (let y = 0; y < height; y++) {
-        let c = coloreSfondo( y / height );
-        fill( c[0], c[1], c[2] );
-        rect( 0, y, width, 1 );
-    }
+    drawingContext.fillStyle = gradienteChiaroscuro( 1 );
+    drawingContext.fillRect( 0, 0, width, height );
     for (let m = 0; m < numeroMacchieSfondo; m++) {
+        let x = random( width );
         let y = random( height );
-        let c = coloreSfondo( y / height );
+        let c = coloreSfondo( quota( x, y ) );
         let scarto = random( -28, 28 );
-        macchia( random( width ), y, random( 200, 520 ),
+        macchia( x, y, random( 200, 520 ),
                  [ c[0] + scarto, c[1] + scarto * 0.85, c[2] + scarto * 0.8 ],
                  random( 0.05, 0.11 ), random( 0.35, 0.9 ) );
     }
     image( tramaGrossa, 0, 0, width, height );
     image( tramaFine, 0, 0, width, height );
+
+    // la luce colpisce il tessuto in un punto diverso a ogni clic: la
+    // macchia schiarisce e basta, così nessun vaso le resta sopra in chiaro
+    let luce = 'rgba(255, 236, 220,' + intensitaLuceSfondo + ')';
+    let gradienteLuce = drawingContext.createRadialGradient(
+        luceSfondoX, luceSfondoY, 0,
+        luceSfondoX, luceSfondoY, raggioLuceSfondo );
+    gradienteLuce.addColorStop( 0, luce );
+    gradienteLuce.addColorStop( 1, 'rgba(255, 236, 220,0)' );
+    drawingContext.fillStyle = gradienteLuce;
+    drawingContext.fillRect( 0, 0, width, height );
+}
+
+// Quanto un punto è lontano dal lato illuminato, da 0 a 1: è la sua
+// proiezione sull'asse del chiaroscuro, centrata sulla tela. Con l'asse
+// verticale torna a essere y/height, com'era prima. Sfondo, sangue, veli e
+// macchie leggono tutti questa stessa quota, quindi restano coerenti
+function quota( x, y ) {
+    let dx = x - width / 2, dy = y - height / 2;
+    let asse = dx * cos( angoloChiaroscuro ) + dy * sin( angoloChiaroscuro );
+    let meta = ( width * abs( cos( angoloChiaroscuro ) ) +
+                 height * abs( sin( angoloChiaroscuro ) ) ) / 2;
+    return constrain( asse / meta + 0.5, 0, 1 );
+}
+
+// Il gradiente lineare lungo l'asse del chiaroscuro: lo usano lo sfondo e il
+// velo fra i piani, così coprono esattamente la stessa distribuzione
+function gradienteChiaroscuro( alpha ) {
+    let dx = cos( angoloChiaroscuro ), dy = sin( angoloChiaroscuro );
+    let meta = ( width * abs( dx ) + height * abs( dy ) ) / 2;
+    let gradiente = drawingContext.createLinearGradient(
+        width / 2 - dx * meta, height / 2 - dy * meta,
+        width / 2 + dx * meta, height / 2 + dy * meta );
+    for (let i = 0; i < fermateSfondo.length; i++) {
+        let c = fermateSfondo[i][1];
+        gradiente.addColorStop( fermateSfondo[i][0],
+            'rgba(' + floor( c[0] ) + ',' + floor( c[1] ) + ',' + floor( c[2] ) + ',' + alpha + ')' );
+    }
+    return gradiente;
 }
 
 // Colore a una certa quota fra le fermate: lo usano lo sfondo e i vasi
@@ -517,7 +574,7 @@ function coloreAlleFermate( fermate, f ) {
     return fermate[fermate.length - 1][1];
 }
 
-// Colore del gradiente dello sfondo a una certa altezza
+// Colore del tessuto a una certa quota del chiaroscuro
 function coloreSfondo( f ) {
     return coloreAlleFermate( fermateSfondo, f );
 }
@@ -620,16 +677,13 @@ function profonditaDiCampo() {
     drawingContext.drawImage( contesto.canvas, 0, 0 );
 }
 
-// La membrana fra i piani di profondità: uno strato di tessuto, riga per
-// riga col colore dello sfondo, più un po' di trama fine. I vasi disegnati
-// prima finiscono sotto e si intravedono, come dietro un velo bagnato
+// La membrana fra i piani di profondità: uno strato di tessuto col colore
+// dello sfondo, più un po' di trama fine. I vasi disegnati prima finiscono
+// sotto e si intravedono, come dietro un velo bagnato
 function membrana() {
     noStroke();
-    for (let y = 0; y < height; y++) {
-        let c = coloreSfondo( y / height );
-        fill( c[0], c[1], c[2], veloMembrana );
-        rect( 0, y, width, 1 );
-    }
+    drawingContext.fillStyle = gradienteChiaroscuro( veloMembrana / 255 );
+    drawingContext.fillRect( 0, 0, width, height );
     tint( 255, 128 );
     image( tramaFine, 0, 0, width, height );
     noTint();
@@ -639,10 +693,11 @@ function membrana() {
 // sembrano sovrapposti come in un disegno vettoriale
 function velature() {
     for (let m = 0; m < numeroVelature; m++) {
+        let x = random( width );
         let y = random( height );
-        let c = coloreSfondo( y / height );
+        let c = coloreSfondo( quota( x, y ) );
         let scarto = random( -18, 18 );
-        macchia( random( width ), y, random( 260, 560 ),
+        macchia( x, y, random( 260, 560 ),
                  [ c[0] + scarto, c[1] + scarto, c[2] + scarto ],
                  random( 0.04, 0.09 ), random( 0.3, 0.7 ) );
     }

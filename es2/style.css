@@ -1,6 +1,7 @@
 html, body {
   margin: 0;
   padding: 0;
+  background-color: #0d0a0a;
 }
 
 /* la tela al centro della finestra; se è più grande, parte dall'angolo
