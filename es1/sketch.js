@@ -4,6 +4,14 @@ function tixy(t, i, x, y) {
     // x = coordinata x da 0.0 a 1.0
     // y = coordinata y da 0.0 a 1.0
 
+    // un ciclo di circa 80 secondi: parte dal dettaglio pieno, passa alla fase
+    // verde e torna, così il contrasto si vede anche in una visione breve
+    let ciclo = 0.5 + 0.5 * cos(t * 0.08);
+    let dettaglio = 0.1 + 0.9 * pow(ciclo, 2);
+
+    // il verde sale proprio nelle fasi semplici, per contrasto con il rosso/viola
+    let ondataVerde = pow(1 - ciclo, 2) * 20;
+
     // il primo rumore sposta lo spazio lungo un vortice: è il domain warping,
     // e trasforma le macchie morbide in pieghe e venature
     let warp = noise(x * 1.6, y * 1.6, t * 0.03);
@@ -41,9 +49,13 @@ function tixy(t, i, x, y) {
     // grana minuta: rompe la levigatezza del rumore senza diventare disturbo
     let grana = random(-3, 3);
 
-    let r = 4 + carne + massa * respiro + vena * 170 * respiro + filo * 60 + aloneFilo * 25 + grana;
-    let g = 2 + carne * 0.03 + massa * 0.045 * respiro + vena * 16 * respiro + filo * 25 + aloneFilo * 8 + grana * 0.4;
-    let b = 6 + carne * 0.05 + massa * 0.10 * respiro + venaBlu * 150 * respiro + filo * 210 + aloneFilo * 70 + grana * 0.6;
+    // massa e carne restano sempre: cambia solo il peso delle cose finissime
+    let r = 4 + carne + massa * respiro
+          + (vena * 170 * respiro + filo * 60 + aloneFilo * 25) * dettaglio + grana;
+    let g = 2 + carne * 0.03 + massa * 0.045 * respiro + ondataVerde
+          + (vena * 16 * respiro + filo * 25 + aloneFilo * 8) * dettaglio + grana * 0.4;
+    let b = 6 + carne * 0.05 + massa * 0.10 * respiro
+          + (venaBlu * 150 * respiro + filo * 210 + aloneFilo * 70) * dettaglio + grana * 0.6;
 
     return [r, g, b];
 }
